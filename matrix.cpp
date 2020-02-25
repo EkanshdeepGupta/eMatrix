@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <iostream>
 #include <ctime> // for random
+#include <signal.h>
 
 using namespace std;
 
@@ -9,9 +10,10 @@ using namespace std;
 #define ROWFREQ 0.03 //frequency with which to start a new row
 #define MINLENGTH 3 //parameters for length of vertical chain
 #define MAXLENGTH 15
+#define ASCIIMIN 35 //parameters for permitted ascii characters
+#define ASCIIMAX 122
 
-
-// ascii values from 35 to 122 (inclusive)
+bool resizeFlag = false;
 
 struct matrixChar {
 	char label;
@@ -22,9 +24,19 @@ struct matrixChar {
 	*/
 };
 
-int nextStepMutation(matrixChar ** charArray, int * rowSpawn);
+void executeMatrix(bool * terminateFlag);
+
+void handleResizing(int signal) {
+    endwin();
+    refresh();
+	initscr();
+	resizeFlag = true;
+}
+
+int nextStepMutation(matrixChar ** charArray, int * rowSpawn, int localLINES, int localCOLS); //localLINES and localCOLS to try to minimize segfault on resize
 char randomChar();
-int printArray(matrixChar ** charArray);
+int printArray(matrixChar ** charArray, int localLINES, int localCOLS);
+
 
 int main(int argc, char ** argv)  {
 	srand((unsigned) time(0));
@@ -32,12 +44,27 @@ int main(int argc, char ** argv)  {
 	initscr();
 	refresh();
 	noecho();
+	nodelay(stdscr,TRUE);
+	curs_set(0);
+	
 	start_color();
 	init_pair(1, COLOR_GREEN, COLOR_BLACK);
 	init_pair(2, COLOR_WHITE, COLOR_BLACK);
 
-	curs_set(0);
+	signal(SIGWINCH, handleResizing);
 
+	bool terminateFlag = false;
+	while(!terminateFlag){
+		executeMatrix(&terminateFlag);
+	}
+
+	endwin();
+
+	return 0;
+}
+
+void executeMatrix(bool * terminateFlag) {
+	resizeFlag = false;
 	matrixChar **charArray;
 	int rowSpawn[COLS];
 
@@ -56,9 +83,18 @@ int main(int argc, char ** argv)  {
 		rowSpawn[j] = 0;
 	}
 
-	while(true) {
-		nextStepMutation(charArray, rowSpawn);
-		printArray(charArray);
+	while(!resizeFlag && !*terminateFlag) {
+		int keyVal = getch();
+		if (keyVal == KEY_RESIZE) {
+			handleResizing(0);
+			break;
+		}
+		else if (keyVal != ERR) {
+			*terminateFlag = true;
+			break;
+		}
+		nextStepMutation(charArray, rowSpawn, LINES, COLS);
+		printArray(charArray, LINES, COLS);
 		refresh();
 
 		struct timespec tim;
@@ -67,15 +103,16 @@ int main(int argc, char ** argv)  {
 		nanosleep(&tim, NULL);
 	}
 
-	getch();
-	endwin();
+	// for (int i=0; i < LINES; i++) {
+	// 	delete charArray[i];
+	// }
 
-	return 0;
+	// delete charArray;
 }
 
-int nextStepMutation(matrixChar ** charArray, int * rowSpawn) {
-	for (int i=LINES-1; i>0; i--) {
-		for (int j=0; j<COLS; j++) {
+int nextStepMutation(matrixChar ** charArray, int * rowSpawn, int localLINES, int localCOLS) {
+	for (int i=localLINES-1; i>0; i--) {
+		for (int j=0; j<localCOLS; j++) {
 			if (charArray[i-1][j].label != ' ' && charArray[i][j].label == ' ')	{
 				charArray[i][j].label = randomChar();
 				charArray[i][j].flag = 1;
@@ -90,8 +127,7 @@ int nextStepMutation(matrixChar ** charArray, int * rowSpawn) {
 		}	
 	}
 
-	for (int j=0; j<COLS; j++) {
-		//cerr << rowSpawn[j] << endl;
+	for (int j=0; j<localCOLS; j++) {
 		if (rowSpawn[j] > 0) {
 			rowSpawn[j]--;
 		}
@@ -114,14 +150,14 @@ int nextStepMutation(matrixChar ** charArray, int * rowSpawn) {
 }
 
 char randomChar() {
-	int num = 35 + (rand() % 88);
+	int num = ASCIIMIN + (rand() % (ASCIIMAX - ASCIIMIN + 1));
 
 	return (char) num;
 }
 
-int printArray(matrixChar ** charArray) {
-	for (int i=0; i<LINES; i++) {
-		for (int j=0; j<COLS; j++) {
+int printArray(matrixChar ** charArray, int localLINES, int localCOLS) {
+	for (int i=0; i<localLINES; i++) {
+		for (int j=0; j<localCOLS; j++) {
 			if (charArray[i][j].label == ' ' || charArray[i][j].flag == 0) {
 				attron(COLOR_PAIR(1));
 				mvaddch(i, j, charArray[i][j].label);
