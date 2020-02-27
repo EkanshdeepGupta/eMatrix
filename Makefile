@@ -1,2 +1,2 @@
 all:
-	g++ -lncurses -o matrix ./matrix.cpp
+	g++ -o matrix ./matrix.cpp -lncurses
